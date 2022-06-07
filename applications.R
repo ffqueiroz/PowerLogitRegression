@@ -4,6 +4,8 @@
 require("PLreg")
 require("betareg")
 require("EnvStats")
+require("FlexReg")
+require("gamlss")
 
 ### Application 1: Employment in non-agricultural sectors
 y = read.table("agro.txt")$x
@@ -11,7 +13,6 @@ y = read.table("agro.txt")$x
 # fit beta
 fit.beta <- betareg(y~1)
 summary(fit.beta)
-
 
 a_hat = fit.beta$coefficients$precision*( exp(fit.beta$coefficients$mean)/(1+exp(fit.beta$coefficients$mean))  )
 b_hat = fit.beta$coefficients$precision - a_hat
@@ -50,7 +51,7 @@ for(i in 1:length(y)){
   med[i]=median(eo, na.rm = TRUE)
 }
 
-fda_hat = pbeta(y,a_hat,b_hat )
+fda_hat = pbeta(y, a_hat, b_hat )
 residuos = qnorm(fda_hat)
 
 resRid <- residuos
@@ -59,7 +60,7 @@ med1Rid <- sort(med)
 e2Rid <- sort(e2)
 
 faixaRid <- c(-3.5,3.5)
-qqnorm(resRid, pch="+", las=1, ylim=faixaRid, xlab="quantis te?ricos", ylab="res?duo quant?lico", main="")
+qqnorm(resRid, pch="+", las=1, ylim=faixaRid, main="")
 qqnormInt <- function(y,IDENTIFY = TRUE){
   qqnorm(y,pch="+", las=1, ylim=faixaRid, xlab="Quantile N(0,1)", ylab="quantile residual", main="", cex = 0.8) -> X
   if(IDENTIFY) return(identify(X,cex=0.8))
@@ -150,7 +151,6 @@ legend(x=0.3,y=6,
        col=c("blue", "black","black"),lty=c(1,2,3), lwd = c(2,1,1),cex=0.9,box.col = "white", bty="n")
 
 
-
 plot(ecdf(y),verticals = TRUE,  lwd = 2, col = "gray", main = "", ylab="Cumulative density function",
      xlab = "y", las=1, xlim = c(0.3, 1.04))
 stripchart(y, add = TRUE, at = 0, col = "black", pch=3)
@@ -199,6 +199,454 @@ legend(x=0.61,y=0.2,
        legend=parametros,
        col=c("blue", "black","black"),lty=c(1,2,3), lwd = c(2,1,1),cex=0.9,box.col = "white", bty="n")
 
+# Extra distributions
+# fit logitSHASH 
+gen.Family("SHASH", type = "logit")
+
+fit.SHASH <- gamlss(y~1,family="logitSHASH", 
+                    control = gamlss.control(n.cyc = 200, c.crit = 0.005))
+AIC(fit.SHASH)
+
+mu_hat.SHASH    <- fit.SHASH$mu.coefficients
+sigma_hat.SHASH <- exp(fit.SHASH$sigma.coefficients)
+nu_hat.SHASH    <- exp(fit.SHASH$nu.coefficients)
+tau_hat.SHASH   <- exp(fit.SHASH$tau.coefficients)
+
+hist(y, nclass=15, main="", las=1, ylab="Density", prob=TRUE, col = "white", ylim = c(0, 6), xlim = c(0.3, 1))
+curve(dlogitSHASH(x, mu = mu_hat.SHASH, sigma = sigma_hat.SHASH, nu = nu_hat.SHASH,
+                  tau = tau_hat.SHASH), add = TRUE, lty = 2)
+
+fda_hatSHASH = plogitSHASH(y[order(y)], mu = mu_hat.SHASH, sigma = sigma_hat.SHASH, nu = nu_hat.SHASH,
+                           tau = tau_hat.SHASH)
+residuos = qnorm(fda_hatSHASH)
+Upsilom.SHASH = (length(y)^(-1))*sum(abs(qnorm(fda_hatSHASH)-evNormOrdStats(n = length(y))))
+
+# logitSHASH envelope
+residuos = qnorm(fda_hatSHASH)
+rep=100
+residuos_env=matrix(rep(0,length(y)*rep),ncol=rep)
+for(i in 1:rep){
+  y_env=rlogitSHASH(length(y), mu = mu_hat.SHASH, sigma = sigma_hat.SHASH, nu = nu_hat.SHASH,
+                    tau = tau_hat.SHASH)
+  fit_env = gamlss(y_env ~ 1,family="logitSHASH", 
+                   control = gamlss.control(n.cyc = 200, c.crit = 0.005))
+  
+  mu_hat_env    <- fit_env$mu.coefficients
+  sigma_hat_env <- exp(fit_env$sigma.coefficients)
+  nu_hat_env    <- exp(fit_env$nu.coefficients)
+  tau_hat_env   <- exp(fit_env$tau.coefficients)
+  
+  fda_hat.env = plogitSHASH(y_env, mu = mu_hat_env, sigma = sigma_hat_env, 
+                            nu = nu_hat_env, tau = tau_hat_env)
+  residuos_env[,i]=sort(qnorm(fda_hat.env))
+  print(i)
+}
+
+resid_env=residuos_env
+e1=numeric(length(resid_env[,1]))
+e2=numeric(length(resid_env[,1]))
+med=numeric(length(resid_env[,1]))
+
+for(i in 1:length(y)){
+  eo=resid_env[i,]
+  e1[i]=quantile(eo,0.025, na.rm = TRUE)
+  e2[i]=quantile(eo,0.975, na.rm = TRUE)
+  med[i]=median(eo, na.rm = TRUE)
+}
+
+
+
+resRid <- residuos
+e1Rid <- sort(e1)
+med1Rid <- sort(med)
+e2Rid <- sort(e2)
+
+faixaRid <- c(-3.5,3.5)
+qqnorm(resRid, pch="+", las=1, ylim=faixaRid, main="")
+qqnormInt <- function(y,IDENTIFY = TRUE){
+  qqnorm(y,pch="+", las=1, ylim=faixaRid, xlab="Quantile N(0,1)", ylab="quantile residual", main="", cex = 0.8) -> X
+  if(IDENTIFY) return(identify(X,cex=0.8))
+  invisible(X)
+}
+qqnormInt(resRid)
+
+par(new=T)
+qqnorm(e1Rid, axes=F, lty=1, ylim=faixaRid, type="l", xlab="", ylab="", main="", lwd=1)
+par(new=T)
+qqnorm(e2Rid, axes=F, lty=1, ylim=faixaRid, type="l", xlab="", ylab="", main="", lwd=1)
+par(new=T)
+qqnorm(med1Rid, axes=F, lty=2, ylim=faixaRid, type="l", xlab="", ylab="", main="", lwd=1)
+
+
+# fit GB1 
+
+fit.GB1 <- gamlss(y~1,family="GB1", 
+                  control = gamlss.control(n.cyc = 200, c.crit = 0.005))
+AIC(fit.GB1)
+
+mu_hat.GB1    <- exp(fit.GB1$mu.coefficients)/(1 + exp(fit.GB1$mu.coefficients))
+sigma_hat.GB1 <- exp(fit.GB1$sigma.coefficients)/(1 + exp(fit.GB1$sigma.coefficients))
+nu_hat.GB1    <- exp(fit.GB1$nu.coefficients)
+tau_hat.GB1   <- exp(fit.GB1$tau.coefficients)
+
+hist(y, nclass=15, main="", las=1, ylab="Density", prob=TRUE, col = "white", ylim = c(0, 6), xlim = c(0.3, 1))
+curve(dGB1(x, mu = mu_hat.GB1, sigma = sigma_hat.GB1, nu = nu_hat.GB1,
+           tau = tau_hat.GB1), 0.01, 0.99, add = TRUE, lty = 2)
+
+
+fda_hatGB1 = pGB1(y[order(y)], mu = mu_hat.GB1, sigma = sigma_hat.GB1, nu = nu_hat.GB1,
+                  tau = tau_hat.GB1)
+residuos = qnorm(fda_hatGB1)
+Upsilom_GB1 = (length(y)^(-1))*sum(abs(qnorm(fda_hatGB1)-evNormOrdStats(n = length(y))))
+
+# GB1 envelope
+rep=100
+residuos_env=matrix(rep(0,length(y)*rep),ncol=rep)
+for(i in 1:rep){
+  y_env=rGB1(length(y), mu = mu_hat.GB1, sigma = sigma_hat.GB1, nu = nu_hat.GB1,
+             tau = tau_hat.GB1)
+  fit_env = gamlss(y_env ~ 1,family="GB1", 
+                   control = gamlss.control(n.cyc = 200, c.crit = 0.005))
+  
+  mu_hat_env    <- exp(fit_env$mu.coefficients)/(1 + exp(fit_env$mu.coefficients))
+  sigma_hat_env <- exp(fit_env$sigma.coefficients)/(1 + exp(fit_env$sigma.coefficients))
+  nu_hat_env    <- exp(fit_env$nu.coefficients)
+  tau_hat_env   <- exp(fit_env$tau.coefficients)
+  
+  fda_hat.env = pGB1(y_env, mu = mu_hat_env, sigma = sigma_hat_env, 
+                     nu = nu_hat_env, tau = tau_hat_env)
+  residuos_env[,i]=sort(qnorm(fda_hat.env))
+  print(i)
+}
+
+resid_env=residuos_env
+e1=numeric(length(resid_env[,1]))
+e2=numeric(length(resid_env[,1]))
+med=numeric(length(resid_env[,1]))
+
+for(i in 1:length(y)){
+  eo=resid_env[i,]
+  e1[i]=quantile(eo,0.025, na.rm = TRUE)
+  e2[i]=quantile(eo,0.975, na.rm = TRUE)
+  med[i]=median(eo, na.rm = TRUE)
+}
+
+resRid <- residuos
+e1Rid <- sort(e1)
+med1Rid <- sort(med)
+e2Rid <- sort(e2)
+
+faixaRid <- c(-3.5,3.5)
+qqnorm(resRid, pch="+", las=1, ylim=faixaRid, main="")
+qqnormInt <- function(y,IDENTIFY = TRUE){
+  qqnorm(y,pch="+", las=1, ylim=faixaRid, xlab="Quantile N(0,1)", ylab="quantile residual", main="", cex = 0.8) -> X
+  if(IDENTIFY) return(identify(X,cex=0.8))
+  invisible(X)
+}
+qqnormInt(resRid)
+
+par(new=T)
+qqnorm(e1Rid, axes=F, lty=1, ylim=faixaRid, type="l", xlab="", ylab="", main="", lwd=1)
+par(new=T)
+qqnorm(e2Rid, axes=F, lty=1, ylim=faixaRid, type="l", xlab="", ylab="", main="", lwd=1)
+par(new=T)
+qqnorm(med1Rid, axes=F, lty=2, ylim=faixaRid, type="l", xlab="", ylab="", main="", lwd=1)
+
+
+# fit FB distribution 
+
+loglik <- function(par, y){
+  mu1 <- exp(par[1])/(1 + exp(par[1]))
+  mu2 <- exp(par[2])/(1 + exp(par[2]))
+  phi <- exp(par[3])
+  p <- exp(par[4])/(1 + exp(par[4]))
+  
+  f <- p*dbeta(y, mu1*phi, (1-mu1)*phi) + (1 - p)*dbeta(y, mu2*phi, (1-mu2)*phi)
+  sum(log(f))
+}
+
+# starting values
+FB <- summary(flexreg(y ~ 1, type="FB", n.iter=1000))
+
+mu_hat <- exp(FB$Summary.mu[1])/(1+exp(FB$Summary.mu[1]))
+phi_hat <- FB$Summary.phi[1]
+w_hat <- FB$Summary.add[2,1]
+p_hat <- FB$Summary.add[1,1]
+
+mu1.start <- mu_hat + (1 - p_hat)*(w_hat*min(mu_hat/p_hat, (1-mu_hat)/(1-p_hat)))
+mu2.start <- mu_hat - p_hat*(w_hat*min(mu_hat/p_hat, (1-mu_hat)/(1-p_hat)))
+
+start <- c(log(mu1.start/(1 - mu1.start)), log(mu2.start/(1 - mu2.start)), 
+           log(phi_hat), log(p_hat/(1 - p_hat)) )
+fit.FB <- optim(start, loglik, y = y, control = list(fnscale = -1), hessian = TRUE)
+
+mu_hat1.FB <- exp(fit.FB$par[1])/(1+exp(fit.FB$par[1]))
+mu_hat2.FB <- exp(fit.FB$par[2])/(1+exp(fit.FB$par[2]))
+phi_hat.FB <- exp(fit.FB$par[3])
+p_hat.FB <- exp(fit.FB$par[4])/(1+exp(fit.FB$par[4]))
+
+mu_hat <- mu_hat1.FB*p_hat.FB + (1-p_hat.FB)*mu_hat2.FB
+w <- (mu_hat1.FB - mu_hat2.FB)/min(mu_hat/p_hat.FB, (1-mu_hat)/(1-p_hat.FB))
+
+hist(y, nclass=15, main="", las=1, ylab="Density", prob=TRUE, col = "white", ylim = c(0, 6), xlim = c(0.3, 1))
+curve(p_hat.FB*dbeta(x, mu_hat1.FB*phi_hat.FB, (1-mu_hat1.FB)*phi_hat.FB) + 
+        (1 - p_hat.FB)*dbeta(x, mu_hat2.FB*phi_hat.FB, (1-mu_hat2.FB)*phi_hat.FB),
+      0.01, 1, add = TRUE, lty = 2)
+
+fda_hat.FB = p_hat.FB*pbeta(y[order(y)], mu_hat1.FB*phi_hat.FB, (1-mu_hat1.FB)*phi_hat.FB) + 
+  (1 - p_hat.FB)*pbeta(y[order(y)], mu_hat2.FB*phi_hat.FB, (1-mu_hat2.FB)*phi_hat.FB)
+residuos = qnorm(fda_hat.FB)
+
+Upsilom.FB = (length(y)^(-1))*sum(abs(qnorm(fda_hat.FB)-evNormOrdStats(n = length(y))))
+
+# FB envelope
+rep=100
+residuos_env=matrix(rep(0,length(y)*rep),ncol=rep)
+for(i in 1:rep){
+  u <- rbinom(length(y), 1, p_hat.FB)
+  beta1 <- rbeta(length(y), mu_hat1.FB*phi_hat.FB, (1-mu_hat1.FB)*phi_hat.FB)
+  beta2 <- rbeta(length(y), mu_hat2.FB*phi_hat.FB, (1-mu_hat2.FB)*phi_hat.FB)
+  y_env <- ifelse(u == 1, beta1, beta2)
+  
+  fit.FB_env <- optim(start, loglik, y = y_env, control = list(fnscale = -1))
+  
+  mu_hat1.FB_env <- exp(fit.FB_env$par[1])/(1+exp(fit.FB_env$par[1]))
+  mu_hat2.FB_env <- exp(fit.FB_env$par[2])/(1+exp(fit.FB_env$par[2]))
+  phi_hat.FB_env <- exp(fit.FB_env$par[3])
+  p_hat.FB_env <- exp(fit.FB_env$par[4])/(1+exp(fit.FB_env$par[4]))
+  
+  fda_hat.env = p_hat.FB_env*pbeta(y_env, mu_hat1.FB_env*phi_hat.FB_env, (1-mu_hat1.FB_env)*phi_hat.FB_env) + 
+    (1 - p_hat.FB_env)*pbeta(y_env, mu_hat2.FB_env*phi_hat.FB_env, (1-mu_hat2.FB_env)*phi_hat.FB_env)
+  residuos_env[,i]=sort(qnorm(fda_hat.env))
+  print(i)
+}
+
+resid_env=residuos_env
+e1=numeric(length(resid_env[,1]))
+e2=numeric(length(resid_env[,1]))
+med=numeric(length(resid_env[,1]))
+
+for(i in 1:length(y)){
+  eo=resid_env[i,]
+  e1[i]=quantile(eo,0.025, na.rm = TRUE)
+  e2[i]=quantile(eo,0.975, na.rm = TRUE)
+  med[i]=median(eo, na.rm = TRUE)
+}
+
+resRid <- residuos
+e1Rid <- sort(e1)
+med1Rid <- sort(med)
+e2Rid <- sort(e2)
+
+faixaRid <- c(-3.5,3.5)
+qqnorm(resRid, pch="+", las=1, ylim=faixaRid, main="")
+qqnormInt <- function(y,IDENTIFY = TRUE){
+  qqnorm(y,pch="+", las=1, ylim=faixaRid, xlab="Quantile N(0,1)", ylab="quantile residual", main="", cex = 0.8) -> X
+  if(IDENTIFY) return(identify(X,cex=0.8))
+  invisible(X)
+}
+qqnormInt(resRid)
+
+par(new=T)
+qqnorm(e1Rid, axes=F, lty=1, ylim=faixaRid, type="l", xlab="", ylab="", main="", lwd=1)
+par(new=T)
+qqnorm(e2Rid, axes=F, lty=1, ylim=faixaRid, type="l", xlab="", ylab="", main="", lwd=1)
+par(new=T)
+qqnorm(med1Rid, axes=F, lty=2, ylim=faixaRid, type="l", xlab="", ylab="", main="", lwd=1)
+
+
+
+# fit logitskewnormal type 2
+
+
+gen.Family("SN2", type = "logit")
+
+fit.SN2 <- gamlss(y~1,family="logitSN2", 
+                  control = gamlss.control(n.cyc = 200, c.crit = 0.005))
+AIC(fit.SN2)
+
+mu_hat.SN2    <- fit.SN2$mu.coefficients
+sigma_hat.SN2 <- exp(fit.SN2$sigma.coefficients)
+nu_hat.SN2    <- exp(fit.SN2$nu.coefficients)
+
+hist(y, nclass=15, main="", las=1, ylab="Density", prob=TRUE, col = "white", ylim = c(0, 6), xlim = c(0.3, 1))
+curve(dlogitSN2(x, mu = mu_hat.SN2, sigma = sigma_hat.SN2, nu = nu_hat.SN2), add = TRUE, lty = 2)
+
+
+fda_hatSN2 = plogitSN2(y[order(y)], mu = mu_hat.SN2, sigma = sigma_hat.SN2, nu = nu_hat.SN2)
+residuos = qnorm(fda_hatSN2)
+Upsilom.SN2 = (length(y)^(-1))*sum(abs(qnorm(fda_hatSN2) - evNormOrdStats(n = length(y))))
+
+
+# logitSHASH envelope
+residuos = qnorm(fda_hatSN2)
+rep=100
+residuos_env=matrix(rep(0,length(y)*rep),ncol=rep)
+for(i in 1:rep){
+  y_env=rlogitSN2(length(y), mu = mu_hat.SN2, sigma = sigma_hat.SN2, nu = nu_hat.SN2)
+  fit_env = gamlss(y_env ~ 1,family="logitSN2", 
+                   control = gamlss.control(n.cyc = 200, c.crit = 0.005))
+  
+  mu_hat_env    <- fit_env$mu.coefficients
+  sigma_hat_env <- exp(fit_env$sigma.coefficients)
+  nu_hat_env    <- exp(fit_env$nu.coefficients)
+  
+  fda_hat.env = plogitSN2(y_env, mu = mu_hat_env, sigma = sigma_hat_env, 
+                          nu = nu_hat_env)
+  residuos_env[,i]=sort(qnorm(fda_hat.env))
+  print(i)
+}
+
+resid_env=residuos_env
+e1=numeric(length(resid_env[,1]))
+e2=numeric(length(resid_env[,1]))
+med=numeric(length(resid_env[,1]))
+
+for(i in 1:length(y)){
+  eo=resid_env[i,]
+  e1[i]=quantile(eo,0.025, na.rm = TRUE)
+  e2[i]=quantile(eo,0.975, na.rm = TRUE)
+  med[i]=median(eo, na.rm = TRUE)
+}
+
+resRid <- residuos
+e1Rid <- sort(e1)
+med1Rid <- sort(med)
+e2Rid <- sort(e2)
+
+faixaRid <- c(-3.5,3.5)
+qqnorm(resRid, pch="+", las=1, ylim=faixaRid, main="")
+qqnormInt <- function(y,IDENTIFY = TRUE){
+  qqnorm(y,pch="+", las=1, ylim=faixaRid, xlab="Quantile N(0,1)", ylab="quantile residual", main="", cex = 0.8) -> X
+  if(IDENTIFY) return(identify(X,cex=0.8))
+  invisible(X)
+}
+qqnormInt(resRid)
+
+par(new=T)
+qqnorm(e1Rid, axes=F, lty=1, ylim=faixaRid, type="l", xlab="", ylab="", main="", lwd=1)
+par(new=T)
+qqnorm(e2Rid, axes=F, lty=1, ylim=faixaRid, type="l", xlab="", ylab="", main="", lwd=1)
+par(new=T)
+qqnorm(med1Rid, axes=F, lty=2, ylim=faixaRid, type="l", xlab="", ylab="", main="", lwd=1)
+
+
+
+
+# fit logitskewt3 
+gen.Family("ST3", type = "logit")
+
+fit.ST3 <- gamlss(y~1,family="logitST3", 
+                  control = gamlss.control(n.cyc = 200, c.crit = 0.005))
+AIC(fit.ST3)
+
+mu_hat.ST3    <- fit.ST3$mu.coefficients
+sigma_hat.ST3 <- exp(fit.ST3$sigma.coefficients)
+nu_hat.ST3    <- exp(fit.ST3$nu.coefficients)
+tau_hat.ST3    <- exp(fit.ST3$tau.coefficients)
+
+hist(y, nclass=15, main="", las=1, ylab="Density", prob=TRUE, col = "white", ylim = c(0, 6), xlim = c(0.3, 1))
+curve(dlogitST3(x, mu = mu_hat.ST3, sigma = sigma_hat.ST3, nu = nu_hat.ST3, tau = tau_hat.ST3), add = TRUE, lty = 2)
+
+fda_hatST3 = plogitST3(y[order(y)], mu = mu_hat.ST3, sigma = sigma_hat.ST3, nu = nu_hat.ST3, tau = tau_hat.ST3)
+residuos = qnorm(fda_hatST3)
+Upsilom.ST3 = (length(y)^(-1))*sum(abs(qnorm(fda_hatST3) - evNormOrdStats(n = length(y))))
+
+
+# logitST3 envelope
+residuos = qnorm(fda_hatST3)
+rep=100
+residuos_env=matrix(rep(0,length(y)*rep),ncol=rep)
+for(i in 1:rep){
+  y_env=rlogitST3(length(y), mu = mu_hat.ST3, sigma = sigma_hat.ST3, nu = nu_hat.ST3, tau = tau_hat.ST3)
+  fit_env = gamlss(y_env ~ 1,family="logitST3", 
+                   control = gamlss.control(n.cyc = 200, c.crit = 0.005))
+  
+  mu_hat_env    <- fit_env$mu.coefficients
+  sigma_hat_env <- exp(fit_env$sigma.coefficients)
+  nu_hat_env    <- exp(fit_env$nu.coefficients)
+  tau_hat_env   <- exp(fit_env$tau.coefficients)
+  
+  fda_hat.env = plogitST3(y_env, mu = mu_hat_env, sigma = sigma_hat_env, 
+                          nu = nu_hat_env, tau = tau_hat_env)
+  residuos_env[,i]=sort(qnorm(fda_hat.env))
+  print(i)
+}
+
+resid_env=residuos_env
+e1=numeric(length(resid_env[,1]))
+e2=numeric(length(resid_env[,1]))
+med=numeric(length(resid_env[,1]))
+
+for(i in 1:length(y)){
+  eo=resid_env[i,]
+  e1[i]=quantile(eo,0.025, na.rm = TRUE)
+  e2[i]=quantile(eo,0.975, na.rm = TRUE)
+  med[i]=median(eo, na.rm = TRUE)
+}
+
+
+
+resRid <- residuos
+e1Rid <- sort(e1)
+med1Rid <- sort(med)
+e2Rid <- sort(e2)
+
+faixaRid <- c(-3.5,3.5)
+qqnorm(resRid, pch="+", las=1, ylim=faixaRid, main="")
+qqnormInt <- function(y,IDENTIFY = TRUE){
+  qqnorm(y,pch="+", las=1, ylim=faixaRid, xlab="Quantile N(0,1)", ylab="quantile residual", main="", cex = 0.8) -> X
+  if(IDENTIFY) return(identify(X,cex=0.8))
+  invisible(X)
+}
+qqnormInt(resRid)
+
+par(new=T)
+qqnorm(e1Rid, axes=F, lty=1, ylim=faixaRid, type="l", xlab="", ylab="", main="", lwd=1)
+par(new=T)
+qqnorm(e2Rid, axes=F, lty=1, ylim=faixaRid, type="l", xlab="", ylab="", main="", lwd=1)
+par(new=T)
+qqnorm(med1Rid, axes=F, lty=2, ylim=faixaRid, type="l", xlab="", ylab="", main="", lwd=1)
+
+# Plots new distributions
+
+hist(y, nclass=15, main="", las=1, ylab="Density", prob=TRUE, col = "white", ylim = c(0, 6), xlim = c(0.3, 1))
+curve(dlogitSHASH(x, mu = mu_hat.SHASH, sigma = sigma_hat.SHASH, nu = nu_hat.SHASH,
+                  tau = tau_hat.SHASH), add = TRUE, lty = 2)
+curve(dGB1(x, mu = mu_hat.GB1, sigma = sigma_hat.GB1, nu = nu_hat.GB1,
+           tau = tau_hat.GB1), 0.01, 0.99, add = TRUE, lty = 3)
+curve(p_hat.FB*dbeta(x, mu_hat1.FB*phi_hat.FB, (1-mu_hat1.FB)*phi_hat.FB) + 
+        (1 - p_hat.FB)*dbeta(x, mu_hat2.FB*phi_hat.FB, (1-mu_hat2.FB)*phi_hat.FB),
+      0.01, 1, add = TRUE)
+curve(dlogitSN2(x, mu = mu_hat.SN2, sigma = sigma_hat.SN2, nu = nu_hat.SN2), add = TRUE, lty =4)
+
+
+parametros=c(expression(FB),
+             expression(logitSHASH),
+             expression(GB1),
+             expression(logitSN2))
+legend(x=0.3,y=6,
+       legend=parametros,
+       col=c("black", "black","black", "black"),lty=c(1,2,3, 4), lwd = c(1,1,1, 1),cex=0.9,box.col = "white", bty="n")
+
+
+plot(ecdf(y),verticals = TRUE,  lwd = 2, col = "gray", main = "", ylab="Cumulative density function",
+     xlab = "y", las=1, xlim = c(0.3, 1.04))
+stripchart(y, add = TRUE, at = 0, col = "black", pch=3)
+
+curve(plogitSHASH(x, mu = mu_hat.SHASH, sigma = sigma_hat.SHASH, nu = nu_hat.SHASH,
+                  tau = tau_hat.SHASH), 0.0001,0.9999, add = TRUE, lty = 2)
+curve(p_hat.FB*pbeta(x, mu_hat1.FB*phi_hat.FB, (1-mu_hat1.FB)*phi_hat.FB) + 
+        (1 - p_hat.FB)*pbeta(x, mu_hat2.FB*phi_hat.FB, (1-mu_hat2.FB)*phi_hat.FB), 0 , 1, add = TRUE, lwd = 1)
+curve(pGB1(x, mu = mu_hat.GB1, sigma = sigma_hat.GB1, nu = nu_hat.GB1,
+           tau = tau_hat.GB1), 0.00001 , 0.9999, add = TRUE, lty =3)
+curve(plogitSN2(x, mu = mu_hat.SN2, sigma = sigma_hat.SN2, nu = nu_hat.SN2), 0.000001, 0.999999, add = TRUE, lty = 4)
+
+legend(x=0.3,y=0.95,
+       legend=parametros,
+       col=c("black", "black","black", "black"),lty=c(1,2,3, 4), lwd = c(1,1,1, 1),cex=0.9,box.col = "white", bty="n")
+
+
 
 ### Application 2: Firm cost data
 
@@ -223,6 +671,12 @@ extra.parameter(fit, 1,2.5, grid = 30) # zeta = 2.29
 
 fit <- PLreg(firmcost ~ sizelog + indcost, data = Firm,
              family = "SLASH", zeta = 2.29)
+summary(fit)
+
+
+# GJS slash with constant dispersion
+fit <- PLreg(firmcost ~ sizelog + indcost, data = Firm,
+             family = "SLASH", zeta = 1.52, control = PLreg.control(lambda=1))
 summary(fit)
 
 
@@ -370,138 +824,4 @@ legend(x = 0.5,
        col = c("black", "blue", "red", "green", "violet"),
        lty = c(1, 2, 3, 4, 5),
        cex = 0.75)
-
-
-
-### Application 3: Body fat of little brown bats
-
-data("bodyfat_Aeolus")
-help("bodyfat_Aeolus", package = "PLreg")
-
-# Plots - Figure 8
-boxplot(bodyfat_Aeolus$percentfat ~ bodyfat_Aeolus$sex, ylab = "y", xlab = "sex", las = 1, pch = 16,
-        names=c("0","1"))
-boxplot(bodyfat_Aeolus$percentfat ~ bodyfat_Aeolus$year, ylab = "y", xlab = "year", las = 1, pch = 16,
-        names=c("0","1"))
-plot(bodyfat_Aeolus$days, bodyfat_Aeolus$percentfat, pch = 16, ylab = "y", xlab = "days", las = 1)
-identify(bodyfat_Aeolus$days, bodyfat_Aeolus$percentfat, cex = 0.8)
-summary(bodyfat_Aeolus$percentfat[bodyfat_Aeolus$year == 2016])
-summary(bodyfat_Aeolus$percentfat[bodyfat_Aeolus$year == 2009])
-
-## Fitting PL-N, PL-PE, PL-Hyp, and PL-SN models
-
-PL_NO <- PLreg(percentfat ~ days + sex + year | days + sex + year, data = bodyfat_Aeolus,
-               family = "NO")
-summary(PL_NO)
-
-# PL-PE
-
-#Initial model with zeta = 2
-PL_PE <- PLreg(percentfat ~ days + sex + year | days + sex + year, data = bodyfat_Aeolus,
-               family = "PE", zeta = 2)
-# Choosing the best value for zeta
-extra.parameter(PL_PE, lower = 1, upper = 3, grid = 10) # zeta = 1.6
-
-PL_PE <- PLreg(percentfat ~ days + sex + year |  days + sex + year , data = bodyfat_Aeolus,
-               family = "PE", zeta = 1.6)
-summary(PL_PE)
-
-
-# PL-Hyp
-
-#Initial model with zeta = 2
-PL_Hyp <- PLreg(percentfat ~ days + sex + year | days + sex + year, data = bodyfat_Aeolus,
-                family = "Hyp", zeta = 2)
-# Choosing the best value for zeta
-extra.parameter(PL_Hyp, lower = 1, upper = 10, grid = 15) # zeta = 5.5
-
-PL_Hyp <- PLreg(percentfat ~ days + sex + year | days + sex + year , data = bodyfat_Aeolus,
-                family = "Hyp", zeta = 5.5)
-summary(PL_Hyp)
-
-
-# PL-SN
-
-#Initial model with zeta = 2
-PL_SN <- PLreg(percentfat ~ days + sex + year | days + sex + year, data = bodyfat_Aeolus,
-               family = "SN", zeta = 2)
-extra.parameter(PL_SN, lower = 0.1, upper = 2, grid = 10) # zeta = 0.52
-
-PL_SN <- PLreg(percentfat ~ days + sex + year |  days + sex + year, data = bodyfat_Aeolus,
-               family = "SN", zeta = 0.52)
-summary(PL_SN)
-
-
-## Fitting loglog-N, loglog-PE, loglog-Hyp, and loglog-SN models
-
-loglog_NO <- PLreg(percentfat ~ days + sex + year | days + sex + year, data = bodyfat_Aeolus,
-               family = "NO", control = PLreg.control(lambda = 0))
-summary(loglog_NO)
-
-# loglog-PE
-
-#Initial model with zeta = 2
-loglog_PE <- PLreg(percentfat ~ days + sex + year | days + sex + year, data = bodyfat_Aeolus,
-               family = "PE", zeta = 2, control = PLreg.control(lambda = 0))
-# Choosing the best value for zeta
-extra.parameter(loglog_PE, lower = 1, upper = 3, grid = 10) # zeta = 1.6
-
-loglog_PE <- PLreg(percentfat ~ days + sex + year |  days + sex + year , data = bodyfat_Aeolus,
-               family = "PE", zeta = 1.6, control = PLreg.control(lambda = 0))
-summary(loglog_PE)
-
-
-# loglog-Hyp
-
-#Initial model with zeta = 2
-loglog_Hyp <- PLreg(percentfat ~ days + sex + year | days + sex + year, data = bodyfat_Aeolus,
-                family = "Hyp", zeta = 2, control = PLreg.control(lambda = 0))
-# Choosing the best value for zeta
-extra.parameter(loglog_Hyp, lower = 1, upper = 10, grid = 15) # zeta = 5.5
-
-loglog_Hyp <- PLreg(percentfat ~ days + sex + year | days + sex + year , data = bodyfat_Aeolus,
-                family = "Hyp", zeta = 5.5, control = PLreg.control(lambda = 0))
-summary(loglog_Hyp)
-
-
-# loglog-SN
-
-#Initial model with zeta = 2
-loglog_SN <- PLreg(percentfat ~ days + sex + year | days + sex + year, data = bodyfat_Aeolus,
-               family = "SN", zeta = 2, control = PLreg.control(lambda = 0))
-extra.parameter(loglog_SN, lower = 0.1, upper = 2, grid = 10) # zeta = 0.52
-
-loglog_SN <- PLreg(percentfat ~ days + sex + year |  days + sex + year, data = bodyfat_Aeolus,
-               family = "SN", zeta = 0.52, control = PLreg.control(lambda = 0))
-summary(loglog_SN)
-
-
-# Fitting the loglog-NO model
-
-
-#Initial model
-loglog_NO <- PLreg(percentfat ~ days  + year | sex , data = bodyfat_Aeolus,
-               family = "NO", control = PLreg.control(lambda= 0 ))
-summary(loglog_NO)
-
-
-plot(loglog_NO)
-envelope(loglog_NO, type = "standardized")
-influence(loglog_NO)
-
-
-# Plots - Figure 9
-resid = residuals(loglog_NO, type = "standardized")
-plot(resid, xlab = "index", ylab = "standardized residual", pch ="+", ylim = c(-3,3), las = 1)
-abline(h = -2.5, lty = 2)
-abline(h = 2.5, lty = 2)
-abline(h = 0, col = "gray")
-
-envelope(loglog_NO, type = "standardized",ylab = "standardized residual")
-
-influence_measures = influence(loglog_NO, graph = FALSE)
-plot(influence_measures$case.weights, xlab = "index", las = 1, type = "h", ylim = c(0,0.8), ylab = expression( group("|", h[max], "|") ))
-identify(1:159, influence_measures$case.weights, cex = 0.9)
-
-plot(influence_measures$GL, xlab = "index", las = 1, type = "h", ylim = c(0,0.1), ylab = expression(GL[ii]))
 
